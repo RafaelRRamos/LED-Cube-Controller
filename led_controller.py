@@ -1,6 +1,7 @@
 import tkinter as tk
 import serial
 import time
+import math
 
 # ----------------------------
 # SERIAL SETUP
@@ -18,10 +19,13 @@ except:
 # ----------------------------
 running = False
 system_power = False
+clock_running = False
+boot_active = False
+music_enabled = False
 
 current_mode_id = 0
-current_mode_name = None
-current_command_value = None
+
+username = "USER"
 
 modes_used = {
     "Static": False,
@@ -32,11 +36,14 @@ modes_used = {
 
 spin_unlocked = False
 
+rotation_angle = 0
+flash_state = True
+
 # ----------------------------
 # MAIN WINDOW
 # ----------------------------
 window = tk.Tk()
-window.title("LED Cube Controller V2.1")
+window.title("LED Cube Controller V2.9")
 window.geometry("1200x800")
 window.configure(bg="#121212")
 
@@ -51,12 +58,190 @@ cells = []
 # MATRIX FUNCTIONS
 # ----------------------------
 def set_all(color):
+
     for row in cells:
         for cell in row:
             canvas.itemconfig(cell, fill=color)
 
 def clear_all():
+
     set_all("black")
+
+# ----------------------------
+# MUSIC TOGGLE
+# ----------------------------
+def toggle_music():
+
+    global music_enabled
+
+    music_enabled = not music_enabled
+
+    if music_enabled:
+
+        music_status_label.config(
+            text="MUSIC STATUS: ON",
+            fg="#39FF14"
+        )
+
+        music_toggle_button.config(
+            text="MUSIC: ON",
+            bg="#39FF14",
+            fg="black"
+        )
+
+    else:
+
+        music_status_label.config(
+            text="MUSIC STATUS: OFF",
+            fg="#FF3B30"
+        )
+
+        music_toggle_button.config(
+            text="MUSIC: OFF",
+            bg="#FF3B30",
+            fg="white"
+        )
+
+# ----------------------------
+# FLASHING PROMPT
+# ----------------------------
+def flash_prompt():
+
+    global flash_state
+
+    if flash_state:
+        prompt_label.config(fg="#00E5FF")
+    else:
+        prompt_label.config(fg="#252526")
+
+    flash_state = not flash_state
+
+    window.after(500, flash_prompt)
+
+# ----------------------------
+# WELCOME CUBE
+# ----------------------------
+def animate_welcome_cube():
+
+    global rotation_angle
+
+    welcome_canvas.delete("cube")
+
+    center_x = 160
+    center_y = 140
+
+    size = 70
+
+    angle = rotation_angle
+
+    front = []
+    back = []
+
+    for x, y in [
+        (-1, -1),
+        (1, -1),
+        (1, 1),
+        (-1, 1)
+    ]:
+
+        rx = x * math.cos(angle) - y * math.sin(angle)
+        ry = x * math.sin(angle) + y * math.cos(angle)
+
+        front.append((
+            center_x + rx * size,
+            center_y + ry * size
+        ))
+
+    for x, y in [
+        (-1, -1),
+        (1, -1),
+        (1, 1),
+        (-1, 1)
+    ]:
+
+        rx = x * math.cos(angle) - y * math.sin(angle)
+        ry = x * math.sin(angle) + y * math.cos(angle)
+
+        back.append((
+            center_x + rx * size * 0.7 + 40,
+            center_y + ry * size * 0.7 - 40
+        ))
+
+    for i in range(4):
+
+        x1, y1 = back[i]
+        x2, y2 = back[(i + 1) % 4]
+
+        welcome_canvas.create_line(
+            x1, y1, x2, y2,
+            fill="#8A2BE2",
+            width=3,
+            tags="cube"
+        )
+
+    for i in range(4):
+
+        x1, y1 = front[i]
+        x2, y2 = front[(i + 1) % 4]
+
+        welcome_canvas.create_line(
+            x1, y1, x2, y2,
+            fill="#00E5FF",
+            width=3,
+            tags="cube"
+        )
+
+    for i in range(4):
+
+        x1, y1 = front[i]
+        x2, y2 = back[i]
+
+        welcome_canvas.create_line(
+            x1, y1, x2, y2,
+            fill="#39FF14",
+            width=2,
+            tags="cube"
+        )
+
+    rotation_angle += 0.02
+
+    window.after(40, animate_welcome_cube)
+
+# ----------------------------
+# CLOCK DISPLAY
+# ----------------------------
+def update_clock():
+
+    global clock_running
+
+    if not clock_running or not system_power:
+        return
+
+    current_time = time.strftime("%H:%M:%S")
+
+    mode_value.config(text=f"CLOCK {current_time}")
+
+    clear_all()
+
+    colors = [
+        "#00FFB3",
+        "#00E5FF",
+        "#39FF14",
+        "#FFD700",
+        "#8A2BE2"
+    ]
+
+    for row in range(grid_size):
+        for col in range(grid_size):
+
+            color_index = (row + col) % len(colors)
+
+            canvas.itemconfig(
+                cells[row][col],
+                fill=colors[color_index]
+            )
+
+    window.after(1000, update_clock)
 
 # ----------------------------
 # SPIN EFFECT
@@ -79,7 +264,7 @@ def spin_effect(step=0):
     window.after(180, lambda: spin_effect(step + 1))
 
 # ----------------------------
-# ANIMATIONS
+# CORE ANIMATIONS
 # ----------------------------
 def blink_loop(mode_id, state=False):
 
@@ -105,6 +290,7 @@ def chase_loop(mode_id, step=0):
     clear_all()
 
     total_cells = grid_size * grid_size
+
     index = step % total_cells
 
     row = index // grid_size
@@ -135,33 +321,24 @@ def burst_loop(mode_id, radius=0):
                 canvas.itemconfig(cells[r][c], fill="#FFD700")
 
     max_radius = grid_size // 2
+
     next_radius = radius + 1 if radius < max_radius else 0
 
     window.after(200, lambda: burst_loop(mode_id, next_radius))
 
 # ----------------------------
-# CLOCK PLACEHOLDER
-# ----------------------------
-def clock_mode():
-
-    if not system_power:
-        return
-
-    clear_all()
-
-    current_time = time.strftime("%H:%M:%S")
-
-    mode_value.config(text=f"CLOCK {current_time}")
-
-    set_all("#00FFB3")
-
-# ----------------------------
-# PONG PLACEHOLDER
+# SPECIAL FEATURES
 # ----------------------------
 def pong_mode():
 
+    global running
+    global clock_running
+
     if not system_power:
         return
+
+    running = False
+    clock_running = False
 
     clear_all()
 
@@ -170,20 +347,46 @@ def pong_mode():
     for i in range(grid_size):
         canvas.itemconfig(cells[2][i], fill="#FF00FF")
 
-# ----------------------------
-# MUSIC PLACEHOLDER
-# ----------------------------
 def music_mode():
+
+    global running
+    global clock_running
 
     if not system_power:
         return
+
+    running = False
+    clock_running = False
+
+    clear_all()
 
     mode_value.config(text="MUSIC ACTIVE")
 
     status_value.config(text="AUDIO SYSTEM READY", fg="#CC7000")
 
+    for row in range(grid_size):
+        for col in range(grid_size):
+
+            if (row + col) % 2 == 0:
+                canvas.itemconfig(cells[row][col], fill="#CC7000")
+
+def clock_mode():
+
+    global running
+    global clock_running
+
+    if not system_power:
+        return
+
+    running = False
+    clock_running = True
+
+    status_value.config(text="CLOCK MODE ACTIVE", fg="#00FFB3")
+
+    update_clock()
+
 # ----------------------------
-# SPIN UNLOCK CHECK
+# SPIN UNLOCK
 # ----------------------------
 def check_spin_unlock():
 
@@ -215,11 +418,13 @@ def system_off():
 
     global system_power
     global running
+    global clock_running
     global current_mode_id
 
     system_power = False
 
     running = False
+    clock_running = False
 
     current_mode_id += 1
 
@@ -235,16 +440,16 @@ def system_off():
 def send_command(mode_name, command_value):
 
     global running
+    global clock_running
     global current_mode_id
-    global current_mode_name
-    global current_command_value
 
     if not system_power:
+
         status_value.config(text="SYSTEM OFFLINE", fg="#FF3B30")
+
         return
 
-    current_mode_name = mode_name
-    current_command_value = command_value
+    clock_running = False
 
     running = False
 
@@ -257,16 +462,10 @@ def send_command(mode_name, command_value):
     if arduino:
         arduino.write(command_value.encode())
 
-    # ----------------------------
-    # TRACK MODES
-    # ----------------------------
     if mode_name in modes_used:
         modes_used[mode_name] = True
         check_spin_unlock()
 
-    # ----------------------------
-    # MODES
-    # ----------------------------
     if mode_name == "Static":
 
         set_all("#39FF14")
@@ -287,15 +486,17 @@ def send_command(mode_name, command_value):
         burst_loop(my_id)
 
 # ----------------------------
-# RESET
+# RESET SYSTEM
 # ----------------------------
 def reset_system():
 
     global running
+    global clock_running
     global current_mode_id
     global spin_unlocked
 
     running = False
+    clock_running = False
 
     current_mode_id += 1
 
@@ -314,7 +515,122 @@ def reset_system():
         status_value.config(text="SYSTEM OFFLINE", fg="#FF3B30")
 
 # ----------------------------
-# SCREEN SWITCHING
+# RETURN TO WELCOME
+# ----------------------------
+def return_to_welcome():
+
+    global username
+    global boot_active
+
+    username = "USER"
+
+    boot_active = False
+
+    dashboard_frame.pack_forget()
+
+    welcome_title.config(
+        text="LED CUBE CONTROLLER",
+        fg="#00E5FF",
+        font=("Arial", 24, "bold")
+    )
+
+    username_entry.delete(0, tk.END)
+
+    countdown_label.config(text="")
+
+    prompt_label.pack(pady=10)
+
+    username_entry.pack(pady=20)
+
+    enter_button.pack(pady=10)
+
+    welcome_frame.pack(fill="both", expand=True)
+
+# ----------------------------
+# FLASH ENTRY EFFECT
+# ----------------------------
+def flash_enter_effect(count=0):
+
+    colors = [
+        "#00E5FF",
+        "#8A2BE2",
+        "#39FF14",
+        "#FFD700"
+    ]
+
+    color = colors[count % len(colors)]
+
+    welcome_canvas.configure(bg=color)
+
+    if count < 8:
+
+        window.after(
+            120,
+            lambda: flash_enter_effect(count + 1)
+        )
+
+    else:
+
+        welcome_canvas.configure(bg="#1E1E1E")
+
+        enter_system()
+
+# ----------------------------
+# START BOOT
+# ----------------------------
+def start_boot_sequence():
+
+    global username
+    global boot_active
+
+    boot_active = True
+
+    entered_name = username_entry.get().strip()
+
+    if entered_name != "":
+        username = entered_name.upper()
+
+    welcome_title.config(
+        text=f"WELCOME TO THE CUBE\n\nA RETRO VISUALIZATION EXPERIENCE\n\nUSER: {username}",
+        fg="#00E5FF",
+        font=("Arial", 20, "bold")
+    )
+
+    username_entry.pack_forget()
+
+    enter_button.pack_forget()
+
+    prompt_label.pack_forget()
+
+    countdown_sequence(3)
+
+# ----------------------------
+# COUNTDOWN
+# ----------------------------
+def countdown_sequence(value):
+
+    global boot_active
+
+    if not boot_active:
+        return
+
+    if value > 0:
+
+        countdown_label.config(text=str(value))
+
+        window.after(
+            1000,
+            lambda: countdown_sequence(value - 1)
+        )
+
+    else:
+
+        countdown_label.config(text="ENTERING SYSTEM")
+
+        window.after(1000, flash_enter_effect)
+
+# ----------------------------
+# ENTER SYSTEM
 # ----------------------------
 def enter_system():
 
@@ -329,53 +645,36 @@ welcome_frame = tk.Frame(window, bg="#1E1E1E")
 
 welcome_frame.pack(fill="both", expand=True)
 
-title_label = tk.Label(
+welcome_title = tk.Label(
     welcome_frame,
     text="LED CUBE CONTROLLER",
     bg="#1E1E1E",
-    fg="white",
-    font=("Arial", 28, "bold")
+    fg="#00E5FF",
+    font=("Arial", 24, "bold"),
+    justify="center"
 )
 
-title_label.pack(pady=30)
+welcome_title.pack(pady=20)
 
-subtitle_label = tk.Label(
-    welcome_frame,
-    text="Interactive Visualization and Control System",
-    bg="#1E1E1E",
-    fg="#B0B0B0",
-    font=("Arial", 14)
-)
-
-subtitle_label.pack(pady=10)
-
-# ----------------------------
-# WELCOME CUBE PLACEHOLDER
-# ----------------------------
 welcome_canvas = tk.Canvas(
     welcome_frame,
-    width=240,
-    height=240,
+    width=320,
+    height=280,
     bg="#1E1E1E",
     highlightthickness=0
 )
 
-welcome_canvas.pack(pady=20)
+welcome_canvas.pack(pady=10)
 
-for row in range(5):
-    for col in range(5):
+prompt_label = tk.Label(
+    welcome_frame,
+    text="ENTER USER NAME",
+    bg="#1E1E1E",
+    fg="#00E5FF",
+    font=("Arial", 14, "bold")
+)
 
-        x = 40 + (col * 35)
-        y = 40 + (row * 35)
-
-        welcome_canvas.create_oval(
-            x,
-            y,
-            x + 20,
-            y + 20,
-            fill="#00E5FF",
-            outline=""
-        )
+prompt_label.pack(pady=10)
 
 username_entry = tk.Entry(
     welcome_frame,
@@ -396,14 +695,24 @@ enter_button = tk.Button(
     bg="#00E5FF",
     fg="black",
     font=("Arial", 14, "bold"),
-    command=enter_system
+    command=start_boot_sequence
 )
 
-enter_button.pack(pady=20)
+enter_button.pack(pady=10)
+
+countdown_label = tk.Label(
+    welcome_frame,
+    text="",
+    bg="#1E1E1E",
+    fg="#00E5FF",
+    font=("Arial", 28, "bold")
+)
+
+countdown_label.pack(pady=20)
 
 footer_label = tk.Label(
     welcome_frame,
-    text="SYSTEM READY V2.1.0",
+    text="SYSTEM READY V2.9.0",
     bg="#1E1E1E",
     fg="#B0B0B0",
     font=("Arial", 10)
@@ -453,32 +762,48 @@ canvas = tk.Canvas(
 canvas.pack(padx=20, pady=20)
 
 # ----------------------------
-# MATRIX CREATION
+# LEFT CONTROL AREA
 # ----------------------------
-for row in range(grid_size):
+left_control_frame = tk.Frame(
+    visual_frame,
+    bg="#1B263B"
+)
 
-    row_cells = []
+left_control_frame.pack(pady=10)
 
-    for col in range(grid_size):
+music_status_label = tk.Label(
+    left_control_frame,
+    text="MUSIC STATUS: OFF",
+    bg="#1B263B",
+    fg="#FF3B30",
+    font=("Arial", 12, "bold")
+)
 
-        x1 = col * cell_size + 20
-        y1 = row * cell_size + 20
+music_status_label.pack(pady=5)
 
-        x2 = x1 + cell_size
-        y2 = y1 + cell_size
+music_toggle_button = tk.Button(
+    left_control_frame,
+    text="MUSIC: OFF",
+    width=20,
+    bg="#FF3B30",
+    fg="white",
+    font=("Arial", 12, "bold"),
+    command=toggle_music
+)
 
-        rect = canvas.create_rectangle(
-            x1,
-            y1,
-            x2,
-            y2,
-            fill="black",
-            outline="gray"
-        )
+music_toggle_button.pack(pady=5)
 
-        row_cells.append(rect)
+back_to_welcome_button = tk.Button(
+    left_control_frame,
+    text="BACK TO WELCOME",
+    width=20,
+    bg="#00E5FF",
+    fg="black",
+    font=("Arial", 12, "bold"),
+    command=return_to_welcome
+)
 
-    cells.append(row_cells)
+back_to_welcome_button.pack(pady=5)
 
 # ----------------------------
 # CONTROL PANEL
@@ -582,7 +907,7 @@ tk.Button(
 ).pack(pady=5)
 
 # ----------------------------
-# CORE MODES LABEL
+# CORE MODES
 # ----------------------------
 mode_label = tk.Label(
     control_frame,
@@ -594,9 +919,6 @@ mode_label = tk.Label(
 
 mode_label.pack(pady=(30, 10))
 
-# ----------------------------
-# CORE MODE BUTTONS
-# ----------------------------
 tk.Button(
     control_frame,
     text="STATIC",
@@ -634,7 +956,7 @@ tk.Button(
 ).pack(pady=5)
 
 # ----------------------------
-# SPECIAL FEATURES LABEL
+# SPECIAL FEATURES
 # ----------------------------
 special_label = tk.Label(
     control_frame,
@@ -646,9 +968,6 @@ special_label = tk.Label(
 
 special_label.pack(pady=(30, 10))
 
-# ----------------------------
-# SPECIAL FEATURE BUTTONS
-# ----------------------------
 tk.Button(
     control_frame,
     text="CLOCK",
@@ -667,14 +986,39 @@ tk.Button(
     command=pong_mode
 ).pack(pady=5)
 
-tk.Button(
-    control_frame,
-    text="MUSIC",
-    width=20,
-    bg="#CC7000",
-    fg="white",
-    command=music_mode
-).pack(pady=5)
+# ----------------------------
+# MATRIX CREATION
+# ----------------------------
+for row in range(grid_size):
+
+    row_cells = []
+
+    for col in range(grid_size):
+
+        x1 = col * cell_size + 20
+        y1 = row * cell_size + 20
+
+        x2 = x1 + cell_size
+        y2 = y1 + cell_size
+
+        rect = canvas.create_rectangle(
+            x1,
+            y1,
+            x2,
+            y2,
+            fill="black",
+            outline="gray"
+        )
+
+        row_cells.append(rect)
+
+    cells.append(row_cells)
+
+# ----------------------------
+# START ANIMATIONS
+# ----------------------------
+animate_welcome_cube()
+flash_prompt()
 
 # ----------------------------
 # RUN APP
